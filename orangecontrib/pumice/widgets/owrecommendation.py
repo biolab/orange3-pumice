@@ -3,11 +3,9 @@ from typing import Optional
 
 import numpy as np
 
-from AnyQt.QtCore import Qt, QSize, QAbstractTableModel
-from AnyQt.QtGui import QPixmap, QFont
-from AnyQt.QtWidgets import QTableView, QSizePolicy, QItemDelegate
-
-from orangewidget.utils.itemmodels import PyListModel
+from AnyQt.QtCore import Qt, QSize, QAbstractTableModel, QModelIndex, QRect
+from AnyQt.QtGui import QPixmap, QFont, QFontMetrics, QPen
+from AnyQt.QtWidgets import QTableView, QSizePolicy, QItemDelegate, QHeaderView
 
 from Orange.data import Table
 from Orange.widgets import gui, settings
@@ -17,108 +15,189 @@ from Orange.widgets.utils.itemmodels import VariableListModel
 from orangecontrib.network import Network
 from orangewidget.widget import Msg
 
-# TODO: sort person names in the combo, or eliminate combo and have a scrollable list
-# TODO: text "Your friends also liked" is clipeed on projector, but not on machine?!
+
+def height(text, font=None, bold=False):
+    if font is None:
+        font = QFont()
+    oldbold = font.bold()
+    if bold:
+        font.setBold(True)
+    fm = QFontMetrics(font)
+    rect = QRect(0, 0, 150, 1000)
+    height = fm.boundingRect(rect, Qt.TextWordWrap, text).height()
+    font.setBold(oldbold)
+    return height
 
 
-class PosterDelegate(QItemDelegate):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+class PersonDelegate(QItemDelegate):
+    def paint(self, painter, option, index):
+        painter.save()
+        rect = option.rect.adjusted(5, 5, -5, -5)
+        painter.setRenderHint(painter.Antialiasing)
+        name, friends, choices = (
+            index.data(Qt.ItemDataRole.DisplayRole).split("\x00"))
+        align = index.data(Qt.ItemDataRole.TextAlignmentRole)
 
+        painter.save()
+        font = QFont(painter.font())
+        font.setPixelSize(24)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(rect, align, name)
+        rect.adjust(0, height(name, font) + 12, 0, 0)
+        painter.restore()
+
+        painter.drawText(rect, align, choices)
+        rect.adjust(0, height(choices, painter.font()) + 12, 0, 0)
+
+        painter.drawText(rect, align, friends)
+        painter.restore()
+
+    @staticmethod
+    def get_height(name, friends, choices):
+        nfont = QFont()
+        nfont.setBold(True)
+        nfont.setPixelSize(24)
+        font = QFont()
+        return (height(name, nfont) + 12
+                + height(friends, font) + 12
+                + height(choices, font) + 20)
+
+
+class ItemDelegate(QItemDelegate):
     def paint(self, painter, option, index):
         painter.save()
         painter.setRenderHint(painter.Antialiasing)
         image = index.data(Qt.ItemDataRole.DecorationRole)
         rect = option.rect.adjusted(5, 5, -5, -5)
         if image is not None:
-            painter.drawPixmap(
-                rect.x() + (rect.width() - image.width()) // 2, rect.y(),
-                image)
+            x = rect.x() + (rect.width() - image.width()) // 2
+            y = rect.y()
+            painter.drawPixmap(x, y, image)
+            painter.save()
+            painter.setPen(QPen(Qt.GlobalColor.lightGray, 1))
+            painter.drawRect(x, y, image.width(), image.height())
+            painter.restore()
             rect.adjust(0, 210, 0, 0)
-        font = index.data(Qt.ItemDataRole.FontRole)
-        if font:
-            painter.setFont(font)
+
         text = index.data(Qt.ItemDataRole.DisplayRole)
         align = index.data(Qt.ItemDataRole.TextAlignmentRole)
-        painter.drawText(rect, align, text)
+        if text is not None:
+            title, recommenders = text.split("\x00")
+            painter.save()
+            font = QFont(painter.font())
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(rect, align, title)
+            text_rect = painter.fontMetrics().boundingRect(
+                rect, Qt.TextWordWrap, title)
+            h = text_rect.height()
+            painter.restore()
+            rect.adjust(0, h + 4, 0, 0)
+            painter.drawText(rect, align, recommenders)
         painter.restore()
+
+    @staticmethod
+    def get_height(image, title, recommenders):
+        tfont = QFont()
+        tfont.setBold(True)
+        font = QFont()
+        return ((210 if image else 0) +
+                height(title, tfont) + 4 +
+                (height(recommenders, font) if recommenders else 0)
+                + 20)
 
 
 class CartoonTableModel(QAbstractTableModel):
     def __init__(self):
         super().__init__()
-        self.chosen_items = []
-        self.chosen_images = []
-        self.recommended_items = []
-        self.recommended_images = []
-        self.recommenders = []
+        self.names: Optional[np.ndarray] = None  # strings
+        self.items: Optional[np.ndarray] = None  # strings
+        self.images: Optional[list[QPixmap]] = None
 
-    def set_data(self, chosen_items, chosen_images, recommended_items,
-                 recommended_images, recommenders, image_origin):
+        self.friends: Optional[list[list[tuple[int, float]]]] = None
+        self.chosen_items: Optional[list[list[int]]] = None
+        self.recommendations: Optional[list[list[int]]] = None
+        self.recommenders: Optional[list[list[list[int]]]] = None
+
+    def set_data(self,
+                 names, items, images,
+                 friends, chosen_items, recommendations, recommenders):
         self.beginResetModel()
+        self.names = names
+        self.items = items
+        self.images = images
+        self.friends = friends
         self.chosen_items = chosen_items
-        self.chosen_images = chosen_images
-        self.recommended_items = recommended_items
-        self.recommended_images = recommended_images
+        self.recommendations = recommendations
         self.recommenders = recommenders
-        self.image_origin = image_origin
         self.endResetModel()
 
-    def rowCount(self, parent=None):
-        return 5
+    def reset(self):
+        self.beginResetModel()
+        self.names = None
+        self.items = None
+        self.images = None
+        self.friends = None
+        self.chosen_items = None
+        self.recommendations = None
+        self.recommenders = None
+        self.endResetModel()
 
-    def columnCount(self, parent=None):
-        return max(len(self.chosen_items), len(self.recommended_items))
+    def rowCount(self, parent=QModelIndex()):
+        if parent.isValid() or self.names is None:
+            return 0
+        return len(self.friends)
+
+    def columnCount(self, parent=QModelIndex()):
+        if parent.isValid() or self.recommendations is None:
+            return 0
+        return max(map(len, self.recommendations)) + 1
 
     def data(self, index, role):
         row = index.row()
         column = index.column()
-        if role == Qt.ItemDataRole.FontRole and row < 4:
-            font = QFont()
-            font.setPixelSize(18 + 2 * (row in [0, 2]))
-            font.setLetterSpacing(QFont.PercentageSpacing, 110)
-            if row in [0, 2]:
-                font.setBold(True)
-            return font
-        if role == Qt.ItemDataRole.DisplayRole:
-            if row == 0 and column == 0:
-                return "Všeč so ti:"
-            if row == 1 and column < len(self.chosen_items):
-                return self.chosen_items[column]
-            if row == 2 and column == 0:
-                return "Tvojim prijateljem so všeč tudi:"
-            if row == 3 and column < len(self.recommended_items):
-                return self.recommended_items[column]
-            if row == 4 and column < len(self.recommenders):
-                return self.recommenders[column]
-        if role == Qt.ItemDataRole.DecorationRole:
-            if (row == 1
-                    and self.chosen_images is not None
-                    and column < len(self.chosen_images)):
-                img_name = self.chosen_images[column]
-            elif (row == 3
-                    and self.recommended_images is not None
-                    and column < len(self.recommended_images)):
-                img_name = self.recommended_images[column]
-            else:
-                return None
-            img_name = os.path.join(self.image_origin, img_name)
-            if os.path.exists(img_name):
-                image = QPixmap(img_name)
-                return QPixmap(image).scaled(
-                    150, 200, Qt.AspectRatioMode.KeepAspectRatio)
-            else:
-                return None
+        if column == 0:
+            return self.data_for_person(row, role)
+        else:
+            return self.data_for_recommendation(row, column - 1, role)
+
+    def data_for_person(self, row, role):
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if row in (0, 2):
-                return (Qt.AlignmentFlag.AlignLeft
-                        | Qt.AlignmentFlag.AlignVCenter
-                        | Qt.TextDontClip)
-            else:
-                return (Qt.AlignmentFlag.AlignHCenter
-                        | Qt.AlignmentFlag.AlignTop
-                        | Qt.TextWordWrap)
-        return None
+            return (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+                    | Qt.TextWordWrap)
+        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.SizeHintRole):
+            return None
+
+        name = self.names[row]
+        friends = "Similar: " + ", ".join(self.names[self.friends[row][0]])
+        choices = ", ".join(self.items[self.chosen_items[row]])
+        if role == Qt.ItemDataRole.DisplayRole:
+            return "\x00".join((name, friends, choices))
+        if role == Qt.ItemDataRole.SizeHintRole:
+            return QSize(150, PersonDelegate.get_height(name, friends, choices))
+
+    def data_for_recommendation(self, row, column, role):
+        if column >= len(self.recommendations[row]):
+            return None
+
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            return (Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+                    | Qt.TextWordWrap)
+        if role == Qt.ItemDataRole.DecorationRole:
+            return self.images[self.recommendations[row][column]]
+        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.SizeHintRole):
+            return None
+
+        title = self.items[self.recommendations[row][column]]
+        recommenders = ', '.join(self.names[self.recommenders[row][column]])
+        if recommenders:
+            recommenders = f"({recommenders})"
+        if role == Qt.ItemDataRole.DisplayRole:
+            return f"{title}\x00{recommenders}"
+        if role == Qt.ItemDataRole.SizeHintRole:
+            image = self.images and self.images[self.recommendations[row][column]]
+            return QSize(150, ItemDelegate.get_height(image, title, recommenders))
 
 
 class OWRecommendation(OWWidget):
@@ -138,11 +217,15 @@ class OWRecommendation(OWWidget):
         no_user_names_in_net = Msg(
             "Data included in the network does not contain user names.")
         user_names_mismatch = Msg(
-            "Names of network nodes must match names of data columns"
+            "Some network nodes are missing from data columns"
         )
-        invalid_node_data = Msg("Network data format is not recognized")
+        network_names_ambiguous = Msg(
+            "Network nodes contain multiple string attributes.\n"
+            "When network and data are both present, the network must have\n"
+            "a single string attribute whose values match the names of persons."
+        )
+        invalid_node_data = Msg("Network data must be a table or a 1-d array")
 
-    selected_person_hint: Optional[str] = settings.Setting(None)
     item_column_hint: Optional[str] = settings.Setting(None)
     person_column_hint: Optional[str] = settings.Setting(None)
 
@@ -244,16 +327,13 @@ class OWRecommendation(OWWidget):
                 or None if person can't be chosen (because it's taken from
                 network)
             person_names (np.ndarray of strings): names of persons
-            selected_person (string): name of selected person
 
             item_column (StringVariable): variable with names of items,
                 or None if it can't be chosen.
             item_names (np.ndarray of strings): names of items
 
             image_column (StringVariable): variable with image names
-
-          - otherwise, if
-           and is equal to `data` if it exists, otherwise to `network.nodes`
+            images (list of QPixmap): images
         """
         super().__init__()
         self.network: Network = None
@@ -268,14 +348,14 @@ class OWRecommendation(OWWidget):
         self.item_names = None
         self.item_column = None
 
-        self.selected_person = None
-
         self.image_column = None
+        self.images = None
 
         self.column_box = gui.hBox(self.mainArea)
         gui.comboBox(
             self.column_box, self, "person_column",
             label="Person name column: ", box=True,
+            contentsLength=20,
             model=self.person_column_model,
             callback=self.on_person_column_changed,
             orientation=Qt.Horizontal)
@@ -283,25 +363,19 @@ class OWRecommendation(OWWidget):
         gui.comboBox(
             self.column_box, self, "item_column",
             label="Item column: ", box=True,
+            contentsLength=20,
             model=self.item_column_model,
             callback=self.on_item_column_changed,
             orientation=Qt.Horizontal)
 
-        self.persons_model = PyListModel()
-        box = gui.hBox(self.mainArea)
-        gui.comboBox(
-            box, self, "selected_person",
-            model=self.persons_model,
-            callback=self.on_person_changed)
+        gui.rubber(self.column_box)
 
-        self.friends_list = gui.widgetLabel(box, "<b>Prijatelji</b>: none")
-
-        box3 = gui.vBox(self.mainArea, True)
         self.rec_model = CartoonTableModel()
         self.rec_table = rec = QTableView()
         self.rec_table.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
-        self.rec_table.setItemDelegate(PosterDelegate())
-        self.rec_table.verticalHeader().setDefaultSectionSize(50)
+        self.rec_table.setItemDelegate(ItemDelegate())
+        self.rec_table.setItemDelegateForColumn(0, PersonDelegate())
+        self.rec_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.rec_table.setSelectionMode(QTableView.SelectionMode.NoSelection)
         rec.setModel(self.rec_model)
         rec.verticalHeader().hide()
@@ -309,10 +383,10 @@ class OWRecommendation(OWWidget):
         rec.setShowGrid(False)
         rec.horizontalHeader().setDefaultSectionSize(160)
         rec.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignHCenter)
-        box3.layout().addWidget(rec)
+        self.mainArea.layout().addWidget(rec)
 
     def sizeHint(self):
-        return QSize(900, 600)
+        return QSize(1200, 600)
 
     def clear(self):
         self.Error.clear()
@@ -323,9 +397,6 @@ class OWRecommendation(OWWidget):
         self.person_column = None
         self.person_names = None
 
-        self.persons_model.clear()
-        self.selected_person = None
-
         self.controls.item_column.box.setHidden(True)
         self.item_column_model.clear()
         self.item_column = None
@@ -333,6 +404,7 @@ class OWRecommendation(OWWidget):
 
         self.choices = None
         self.image_column = None
+        self.images = None
 
         self.update_page()
 
@@ -354,13 +426,6 @@ class OWRecommendation(OWWidget):
 
         self.init_person_column()
         self.init_item_column()
-
-        if self.is_valid:
-            self.set_ordered_choices()
-            self.init_value_list()
-            if self.selected_person_hint in self.persons_model:
-                self.selected_person = self.selected_person_hint
-
         self.update_page()
 
     @property
@@ -370,21 +435,36 @@ class OWRecommendation(OWWidget):
     def init_person_column(self):
         if self.network is None:
             return
-        if (isinstance(self.network.nodes, Table)
-                and self.network.nodes.domain.attributes):
-            self._init_person_column_from_net()
-        elif self.data is not None:
-            self._init_person_column_from_data()
+        elif isinstance(self.network.nodes, Table):
+            self._init_person_column_from_net_table()
+        elif not (isinstance(self.network.nodes, np.ndarray)
+                and self.network.number_of_nodes() == self.network.nodes.size):
+            self.Error.invalid_node_data()
         else:
-            self.Error.no_choices()
+            assert self.data is not None  # see handleNewSignals
+            self._init_person_column_from_net_array()
 
     def on_person_column_changed(self):
         assert self.network is not None
         assert isinstance(self.network.nodes, Table)
         self.person_column_hint = self.person_column.name
-        self.person_names = self.network.nodes.get_column(self.person_column)
-        self.set_ordered_choices()
-        self.init_value_list()
+        self._set_person_names_from_column(self.person_column)
+
+    def _set_person_names_from_column(self, var):
+        self._set_person_names(self.network.nodes.get_column(var))
+
+    def _set_person_names(self, names):
+        order = np.argsort(names)
+        self.person_names = names[order]
+
+        if self.data is None:
+            choices = self.network.nodes.X[order]
+        else:
+            domain = self.data.domain
+            order = np.array([domain.index(name) for name in self.person_names])
+            choices = self.data.X.T[order]
+        self.choices = np.nan_to_num(choices).astype(bool)
+        self.update_page()
 
     def init_item_column(self):
         if self.data is None:
@@ -397,49 +477,22 @@ class OWRecommendation(OWWidget):
         self.item_names = self.data.get_column(self.item_column)
         self.update_page()
 
-    def init_value_list(self):
-        self.persons_model[:] = self.person_names
-        self.selected_person = self.persons_model[0]
-
-    def set_ordered_choices(self):
-        """Order of rows is determined by self.person_names.
-           self.data may have a different order and needs to be reordered
-           """
-        if self.network is None:
-            return
-
-        if self.data is None:
-            choices = self.network.nodes.X
-        else:
-            assert self.person_names is not None
-            domain = self.data.domain
-            assert len(self.person_names) == len(domain.attributes)
-            order = np.array([domain.index(name) for name in self.person_names])
-            choices = self.data.X.T[order]
-        self.choices = np.nan_to_num(choices).astype(bool)
-
-    @property
-    def selected_person_index(self):
-        return self.persons_model.indexOf(self.selected_person)
-
-    def on_person_changed(self):
-        self.selected_person_hint = self.selected_person
-        self.update_page()
-
-    def _init_person_column_from_net(self):
-        names = self.data and sorted(var.name for var in self.data.domain.metas)
+    def _init_person_column_from_net_table(self):
+        assert isinstance(self.network.nodes, Table)
+        names = self.data and {var.name for var in self.data.domain.attributes}
+        nnodes = self.network.number_of_nodes()
         applicable = [
             var for var in self.network.nodes.domain.metas
-            if var.is_string and (
-                names is None
-                or sorted(self.network.nodes.get_column(var)) == names)
+            if var.is_string and
+               len(cnames := set(self.network.nodes.get_column(var))) == nnodes
+               and (names is None or cnames >= names)
         ]
         if not applicable:
             self.Error.no_user_names_in_net()
             return
 
         if len(applicable) == 1:
-            self.person_names = self.network.nodes.get_column(applicable[0])
+            self._set_person_names_from_column(applicable[0])
             return
 
         self.person_column_model[:] = applicable
@@ -451,41 +504,25 @@ class OWRecommendation(OWWidget):
                 break
         else:
             self.person_column = applicable[0]
-        self.person_names = self.network.nodes.get_column(
-            self.person_column)
+        self._set_person_names_from_column(self.person_column)
 
-    def _init_person_column_from_data(self):
-        nodes = self.network.nodes
-        if (isinstance(nodes, Table)
-                and not nodes.domain.attributes
-                and len(nodes.domain.metas) == 1
-                and nodes.domain.metas[0].is_string):
-            person_names = nodes.metas.flatten()
-        elif isinstance(nodes, np.ndarray) and (
-                len(self.network.nodes.shape) == 1
-                or self.network.nodes.shape[1] == 1):
-            person_names = nodes.flatten()
-        else:
-            self.Error.invalid_node_data()
-            return
-
-        # Names of network nodes must match names of attributes from data
-        if (sorted(person_names)
-                != sorted(var.name for var in self.data.domain.attributes)):
+    def _init_person_column_from_net_array(self):
+        assert isinstance(self.network.nodes, np.ndarray)
+        assert self.network.number_of_nodes() == self.network.nodes.size
+        person_names = self.network.nodes.flatten()
+        if set(person_names) != {var.name for var in self.data.domain.attributes}:
             self.Error.user_names_mismatch()
             return
-
-        self.person_names = person_names
+        self._set_person_names(person_names)
 
     def _init_item_column_from_net(self):
         # tested in handleNewSignals
         assert isinstance(self.network.nodes, Table)
-        self.item_names = np.array(
-            [var.name for var in self.network.nodes.domain.attributes])
-        if not self.item_names.size:
-            self.item_names = None
+        item_names = [var.name for var in self.network.nodes.domain.attributes]
+        if not item_names:
             self.Error.no_item_names()
-        return
+            return
+        self.item_names = np.array(item_names)
 
     def _init_item_column_from_data(self):
         # Candidates for item names and images
@@ -501,13 +538,14 @@ class OWRecommendation(OWWidget):
                 break
         else:
             for var in string_vars:
-                column = self.data.get_column_view(var)
+                column = self.data.get_column(var)
                 if all(os.path.splitext(v)[1] in {".png", ".jpg", ".jpeg", ".gif"}
                        for v in column):
                     self.image_column = var
                     break
             else:
                 self.image_column = None
+        self.set_images()
 
         # Exclude columns marked as images, but allow the hinted variable
         # If there are no such columns, allow any string variable
@@ -527,80 +565,83 @@ class OWRecommendation(OWWidget):
 
         self.item_column_model[:] = applicable
         self.item_column = hinted or applicable[0]
+        self.item_names = self.data.get_column(self.item_column)
         self.column_box.setHidden(False)
         self.controls.person_column.box.setHidden(False)
 
     def update_page(self):
-        self.set_friends()
-        self.set_recommendations()
-
-    def set_friends(self):
-        sorted_friends = self.get_friends()[0]
-        if len(sorted_friends) == 0:
-            self.friends_list.setText("<b>Prijatelji</b>:")
-            return
-        self.friends_list.setText("<b>Prijatelji</b>: " + ", ".join(self.person_names[sorted_friends]))
-
-    def set_recommendations(self):
         if not self.is_valid:
-            self.rec_model.set_data([], [], [], [], [], "")
+            self.rec_model.reset()
             return
-        image_data = self.image_column and self.data.get_column(self.image_column)
+
+        friends = self.get_friends()
+        recommendations, recommenders = self.get_recommendations()
+        self.rec_model.set_data(
+            self.person_names, self.item_names, self.images,
+            friends,
+            [np.flatnonzero(row) for row in self.choices],
+            recommendations, recommenders)
+
+    def set_images(self):
+        if self.image_column is None:
+            self.images = None
+            return
+
         image_origin = self.image_column.attributes.get("origin", ".")
 
-        chosen_indices = np.flatnonzero(self.choices[self.selected_person_index])
-        chosen_items = self.item_names[chosen_indices]
-        chosen_images = image_data[chosen_indices] if image_data is not None else None
-
-        recm_indices, recommenders = self.get_recommendations()
-        recm_items = self.item_names[recm_indices]
-        recm_images = image_data[recm_indices] if image_data is not None else None
-
-        recommenders = [", ".join(recm) for recm in recommenders]
-        self.rec_table.setRowHeight(1, 280 if self.image_column is not None else 80)
-        self.rec_table.setRowHeight(3, 280 if self.image_column is not None else 80)
-        self.rec_model.set_data(
-            chosen_items, chosen_images, recm_items, recm_images, recommenders,
-            image_origin)
+        self.images = []
+        for img_name in self.data.get_column(self.image_column):
+            img_name = os.path.join(image_origin, img_name)
+            if os.path.exists(img_name):
+                self.images.append(
+                    QPixmap(img_name)
+                    .scaled(150, 200, Qt.AspectRatioMode.KeepAspectRatio))
+            else:
+                self.images.append(None)
 
     def get_friends(self):
         if not self.is_valid:
-            return [], []
+            return None
+        return [self._get_friends_one(row)
+                for row in range(len(self.person_names))]
+
+    def _get_friends_one(self, row):
         # TODO: when https://github.com/biolab/orange3-network/pull/273
-        #  is merged and released, change this function to
-        # neighs, weights = self.network.outgoing(self.selected_person_index, weights=True)
-        # inds = np.argsort(weights)
-        # return neighs[inds], weights[inds]
+        # is released, use
+        # neighs, weights = self.network.outgoing(row, weights=True)
         matrix = self.network.edges[0].edges
-        person = self.selected_person_index
-        fr, to = matrix.indptr[person], matrix.indptr[person + 1]
+        fr, to = matrix.indptr[row], matrix.indptr[row + 1]
         neighs = matrix.indices[fr:to]
         weights = matrix.data[fr:to]
         inds = np.argsort(weights)
         return neighs[inds], weights[inds]
 
     def get_recommendations(self):
-        neighbours_indices = self.get_friends()[0] if self.is_valid else []
-        if len(neighbours_indices) == 0:
+        if not self.is_valid:
+            return None
+        return list(zip(*(self._get_recommendations_one(row)
+                          for row in range(len(self.person_names)))))
+
+    def _get_recommendations_one(self, row):
+        neighbours, _ = self._get_friends_one(row)
+        if len(neighbours) == 0:
             return [], []
 
-        neighbours_choices = self.choices[neighbours_indices]
+        neighbours_choices = self.choices[neighbours]
         counts = np.sum(neighbours_choices, axis=0)
-        counts[self.choices[self.selected_person_index] == 1] = -1
+        counts[self.choices[row] == 1] = -1
         sorted_items = np.argsort(counts)[::-1]
         most_freq = sorted_items[:5]
-        item_indices = most_freq
-        neighbours = self.person_names[neighbours_indices]
+        item_indices = list(most_freq)
         recommenders = [
-            neighbours[neighbours_choices[:, i] == 1] for i in most_freq]
+            list(neighbours[neighbours_choices[:, i] == 1]) for i in most_freq]
         return item_indices, recommenders
 
 
 def main():
     # pylint: disable=import-outside-toplevel
     from Orange.widgets.utils.widgetpreview import WidgetPreview
-    from orangecontrib.network.network.readwrite \
-        import read_pajek
+    from orangecontrib.network.network.readwrite import read_pajek
 
     dirname = os.path.join(os.path.dirname(__file__), "..", 'datasets', 'cartoons')
 
@@ -608,6 +649,7 @@ def main():
     items.domain["poster"].attributes["origin"] = dirname
 
     network = read_pajek(os.path.join(dirname, 'cartoons.net'))
+    network.nodes = Table(os.path.join(dirname, 'cartoons-persons.tab'))
     WidgetPreview(OWRecommendation).run(set_network=network, set_item_data=items)
 
 
