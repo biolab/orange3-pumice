@@ -1,7 +1,7 @@
 import os
 from setuptools import setup, find_packages
 
-VERSION = "0.9"
+VERSION = "0.9.1"
 
 INSTALL_REQUIRES = (
     'Orange3>=3.36',
