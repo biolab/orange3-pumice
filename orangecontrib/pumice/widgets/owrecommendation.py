@@ -112,6 +112,7 @@ class CartoonTableModel(QAbstractTableModel):
     def __init__(self):
         super().__init__()
         self.names: Optional[np.ndarray] = None  # strings
+        self.row_order: Optional[np.ndarray] = None # indices
         self.items: Optional[np.ndarray] = None  # strings
         self.images: Optional[list[QPixmap]] = None
 
@@ -125,6 +126,7 @@ class CartoonTableModel(QAbstractTableModel):
                  friends, chosen_items, recommendations, recommenders):
         self.beginResetModel()
         self.names = names
+        self.row_order = np.argsort(names)
         self.items = items
         self.images = images
         self.friends = friends
@@ -136,6 +138,7 @@ class CartoonTableModel(QAbstractTableModel):
     def reset(self):
         self.beginResetModel()
         self.names = None
+        self.row_order = None
         self.items = None
         self.images = None
         self.friends = None
@@ -155,7 +158,7 @@ class CartoonTableModel(QAbstractTableModel):
         return max(map(len, self.recommendations)) + 1
 
     def data(self, index, role):
-        row = index.row()
+        row = self.row_order[index.row()]
         column = index.column()
         if column == 0:
             return self.data_for_person(row, role)
@@ -203,7 +206,7 @@ class CartoonTableModel(QAbstractTableModel):
 class OWRecommendation(OWWidget):
     name = "Recommendation"
     description = "Demo for simple network-based recommendation algorithm"
-    icon = "icons/recommendation.png"
+    icon = "icons/recommendation.svg"
 
     class Inputs:
         network = Input("Network", Network, default=True)
@@ -319,9 +322,9 @@ class OWRecommendation(OWWidget):
                 `network.nodes`.
 
             choices (np.ndarray of dtype bool):
-                if `data` is given, choices equal data.X.T ordered so that
+                if `data` is given, choices equal `data.X.T` so that
                 rows' names (persons, this is X.T!) correspond to person_names
-                (nodes in the network).
+                (nodes in the network). Otherwise, it equals `network.nodes.X`.
 
             person_column (StringVariable): variable with names of persons,
                 or None if person can't be chosen (because it's taken from
@@ -354,7 +357,7 @@ class OWRecommendation(OWWidget):
         self.column_box = gui.hBox(self.mainArea)
         gui.comboBox(
             self.column_box, self, "person_column",
-            label="Person name column: ", box=True,
+            label="Person name column (in network data): ", box=True,
             contentsLength=20,
             model=self.person_column_model,
             callback=self.on_person_column_changed,
@@ -451,14 +454,15 @@ class OWRecommendation(OWWidget):
         self._set_person_names_from_column(self.person_column)
 
     def _set_person_names_from_column(self, var):
+        assert var.is_string
         self._set_person_names(self.network.nodes.get_column(var))
 
     def _set_person_names(self, names):
-        order = np.argsort(names)
-        self.person_names = names[order]
+        assert isinstance(names, np.ndarray)
+        self.person_names = names
 
         if self.data is None:
-            choices = self.network.nodes.X[order]
+            choices = self.network.nodes.X
         else:
             domain = self.data.domain
             order = np.array([domain.index(name) for name in self.person_names])
@@ -567,7 +571,7 @@ class OWRecommendation(OWWidget):
         self.item_column = hinted or applicable[0]
         self.item_names = self.data.get_column(self.item_column)
         self.column_box.setHidden(False)
-        self.controls.person_column.box.setHidden(False)
+        self.controls.item_column.box.setHidden(False)
 
     def update_page(self):
         if not self.is_valid:
@@ -575,7 +579,7 @@ class OWRecommendation(OWWidget):
             return
 
         friends = self.get_friends()
-        recommendations, recommenders = self.get_recommendations()
+        recommendations, recommenders = self.get_recommendations(5)
         self.rec_model.set_data(
             self.person_names, self.item_names, self.images,
             friends,
@@ -613,16 +617,17 @@ class OWRecommendation(OWWidget):
         fr, to = matrix.indptr[row], matrix.indptr[row + 1]
         neighs = matrix.indices[fr:to]
         weights = matrix.data[fr:to]
-        inds = np.argsort(weights)
+        # stable sort, but reversed, thus - (not [::-1]
+        inds = np.argsort(-weights)
         return neighs[inds], weights[inds]
 
-    def get_recommendations(self):
+    def get_recommendations(self, n):
         if not self.is_valid:
             return None
-        return list(zip(*(self._get_recommendations_one(row)
+        return list(zip(*(self._get_recommendations_one(row, n)
                           for row in range(len(self.person_names)))))
 
-    def _get_recommendations_one(self, row):
+    def _get_recommendations_one(self, row, n):
         neighbours, _ = self._get_friends_one(row)
         if len(neighbours) == 0:
             return [], []
@@ -630,8 +635,16 @@ class OWRecommendation(OWWidget):
         neighbours_choices = self.choices[neighbours]
         counts = np.sum(neighbours_choices, axis=0)
         counts[self.choices[row] == 1] = -1
-        sorted_items = np.argsort(counts)[::-1]
-        most_freq = sorted_items[:5]
+        # Add a bit of noise to break ties randomly
+        sorted_items = np.argsort(
+            np.random.uniform(0, 0.00001, len(counts)) - counts)
+        if n > len(sorted_items):
+            n = len(sorted_items)
+        if sorted_items[n - 1] == -1:
+            n = np.flatnonzero(sorted_items == -1)[0] - 1
+        if n == 0:
+            return [], []
+        most_freq = sorted_items[:n]
         item_indices = list(most_freq)
         recommenders = [
             list(neighbours[neighbours_choices[:, i] == 1]) for i in most_freq]
@@ -649,7 +662,7 @@ def main():
     items.domain["poster"].attributes["origin"] = dirname
 
     network = read_pajek(os.path.join(dirname, 'cartoons.net'))
-    network.nodes = Table(os.path.join(dirname, 'cartoons-persons.tab'))
+    #network.nodes = Table(os.path.join(dirname, 'cartoons-persons.tab'))
     WidgetPreview(OWRecommendation).run(set_network=network, set_item_data=items)
 
 
