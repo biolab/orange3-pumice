@@ -1,17 +1,39 @@
+import os
 from setuptools import setup, find_packages
 
+VERSION = "0.9"
+
 INSTALL_REQUIRES = (
-    'Orange3>=3.35',
+    'Orange3>=3.36',
     'orange3-network'
 ),
 
+LONG_DESCRIPTION = open(os.path.join(os.path.dirname(__file__), 'README.pypi')).read()
+
+ENTRY_POINTS = {
+        'orange3.addon': ('educational = orangecontrib.pumice', ),
+        "orange.widgets": ("Pumice = orangecontrib.pumice.widgets", ),
+        "orange.canvas.help": (
+            'html-index = orangecontrib.prototypes.widgets:WIDGET_HELP_PATH'),
+    }
+
 setup(
     name="Orange3-Pumice",
+    description="Educational widgets for project Pumice",
+    version=VERSION,
+    author='Bioinformatics Laboratory, FRI UL',
+    author_email='contact@orange.biolab.si',
+    url='https://github.com/biolab/orange3-pumice',
+    keywords=(
+        'orange3 add-on',
+    ),
+    long_description=LONG_DESCRIPTION,
+    long_description_content_type='text/markdown',
     packages=find_packages(),
     package_data={"orangecontrib.pumice.widgets": ["icons/*.svg"]},
-    entry_points={
-        'orange3.addon': ('educational = orangecontrib.educational', ),
-        "orange.widgets": ("Pumice = orangecontrib.pumice.widgets", )
-    },
+    entry_points=ENTRY_POINTS,
     install_requires=INSTALL_REQUIRES,
+    namespace_packages=['orangecontrib'],
+    include_package_data=True,
+    test_suite="orangecontrib.prototypes.tests.suite"
 )
