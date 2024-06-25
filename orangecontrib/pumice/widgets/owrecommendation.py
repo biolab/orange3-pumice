@@ -1,5 +1,6 @@
 import os.path
 from typing import Optional
+import urllib.request, urllib.error, urllib.parse
 
 import numpy as np
 
@@ -27,6 +28,32 @@ def height(text, font=None, bold=False):
     height = fm.boundingRect(rect, Qt.TextWordWrap, text).height()
     font.setBold(oldbold)
     return height
+
+
+# TODO
+# This is a horrible quick patch because I realised that using URL's of iamges
+# in data.pumice.si broke this widget. This must be done properly and
+# asynchronously.
+class ImageStore(dict):
+    def __getitem__(self, url):
+        if url not in self:
+            if url.startswith("http"):
+                try:
+                    scheme, path = url.split("://", 1)
+                    url = f'{scheme}://{urllib.parse.quote(path)}'
+                    headers = {'User-Agent': 'Mozilla/5.0'}
+                    request = urllib.request.Request(url, headers=headers)
+                    data = urllib.request.urlopen(request).read()
+                except urllib.error.URLError:
+                    return None
+            elif os.path.exists(url):
+                data = open(url, "rb").read()
+            else:
+                return None
+            pixmap = QPixmap()
+            pixmap.loadFromData(data)
+            self[url] = pixmap.scaled(150, 200, Qt.AspectRatioMode.KeepAspectRatio)
+        return super().__getitem__(url)
 
 
 class PersonDelegate(QItemDelegate):
@@ -339,6 +366,8 @@ class OWRecommendation(OWWidget):
             images (list of QPixmap): images
         """
         super().__init__()
+        self.image_store = ImageStore()
+
         self.network: Network = None
         self.data: Table = None
         self.choices = None
@@ -592,16 +621,11 @@ class OWRecommendation(OWWidget):
             return
 
         image_origin = self.image_column.attributes.get("origin", ".")
-
         self.images = []
         for img_name in self.data.get_column(self.image_column):
-            img_name = os.path.join(image_origin, img_name)
-            if os.path.exists(img_name):
-                self.images.append(
-                    QPixmap(img_name)
-                    .scaled(150, 200, Qt.AspectRatioMode.KeepAspectRatio))
-            else:
-                self.images.append(None)
+            if not img_name.startswith("http"):
+                img_name = os.path.join(image_origin, img_name)
+            self.images.append(self.image_store[img_name])
 
     def get_friends(self):
         if not self.is_valid:
