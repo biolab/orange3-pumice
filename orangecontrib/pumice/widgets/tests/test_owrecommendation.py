@@ -490,8 +490,9 @@ class TestOWRecommendation(WidgetTest):
         w.rec_model.set_data.assert_called()
 
     @patch("os.path.exists", new=lambda x: bool(ord(x[-1]) % 2))
+    @patch("builtins.open")
     @patch("orangecontrib.pumice.widgets.owrecommendation.QPixmap")
-    def test_set_images(self, _):
+    def test_set_images(self, *_):
         w = self.widget
 
         w.image_column = None
