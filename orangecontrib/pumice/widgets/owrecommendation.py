@@ -1,19 +1,25 @@
 import os.path
+from dataclasses import dataclass
 from typing import Optional
-import urllib.request, urllib.error, urllib.parse
+from concurrent.futures import Future, CancelledError
 
 import numpy as np
 
-from AnyQt.QtCore import Qt, QSize, QAbstractTableModel, QModelIndex, QRect
-from AnyQt.QtGui import QPixmap, QFont, QFontMetrics, QPen
+from AnyQt.QtCore import (
+    Qt, QSize, QAbstractTableModel, QModelIndex, QRect, QUrl, Slot)
+from AnyQt.QtGui import QPixmap, QImage, QFont, QFontMetrics, QPen, QIcon
 from AnyQt.QtWidgets import QTableView, QSizePolicy, QItemDelegate, QHeaderView
 
 from Orange.data import Table
 from Orange.widgets import gui, settings
+from Orange.widgets.utils.textimport import StampIconEngine
 from Orange.widgets.widget import OWWidget, Input
 from Orange.widgets.utils.itemmodels import VariableListModel
 
 from orangecontrib.network import Network
+from orangecontrib.imageanalytics.widgets.owimageviewer import (
+    ImageLoader, image_loader)
+from orangewidget.utils.concurrent import FutureWatcher
 from orangewidget.widget import Msg
 
 
@@ -28,32 +34,6 @@ def height(text, font=None, bold=False):
     height = fm.boundingRect(rect, Qt.TextWordWrap, text).height()
     font.setBold(oldbold)
     return height
-
-
-# TODO
-# This is a horrible quick patch because I realised that using URL's of iamges
-# in data.pumice.si broke this widget. This must be done properly and
-# asynchronously.
-class ImageStore(dict):
-    def __getitem__(self, url):
-        if url not in self:
-            if url.startswith("http"):
-                try:
-                    scheme, path = url.split("://", 1)
-                    url = f'{scheme}://{urllib.parse.quote(path)}'
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    request = urllib.request.Request(url, headers=headers)
-                    data = urllib.request.urlopen(request).read()
-                except urllib.error.URLError:
-                    return None
-            elif os.path.exists(url):
-                data = open(url, "rb").read()
-            else:
-                return None
-            pixmap = QPixmap()
-            pixmap.loadFromData(data)
-            self[url] = pixmap.scaled(150, 200, Qt.AspectRatioMode.KeepAspectRatio)
-        return super().__getitem__(url)
 
 
 class PersonDelegate(QItemDelegate):
@@ -80,15 +60,20 @@ class PersonDelegate(QItemDelegate):
         painter.drawText(rect, align, friends)
         painter.restore()
 
-    @staticmethod
-    def get_height(name, friends, choices):
+    def sizeHint(self, option, index):
+        text = index.data(Qt.ItemDataRole.DisplayRole)
+        if text is None:
+            return QSize(150, 0)
+
+        name, friends, choices = text.split("\x00")
         nfont = QFont()
         nfont.setBold(True)
         nfont.setPixelSize(24)
         font = QFont()
-        return (height(name, nfont) + 12
-                + height(friends, font) + 12
-                + height(choices, font) + 20)
+        h = (height(name, nfont) + 12
+             + height(friends, font) + 12
+             + height(choices, font) + 20)
+        return QSize(150, h)
 
 
 class ItemDelegate(QItemDelegate):
@@ -105,7 +90,7 @@ class ItemDelegate(QItemDelegate):
             painter.setPen(QPen(Qt.GlobalColor.lightGray, 1))
             painter.drawRect(x, y, image.width(), image.height())
             painter.restore()
-            rect.adjust(0, 210, 0, 0)
+            rect.adjust(0, image.height() + 10, 0, 0)
 
         text = index.data(Qt.ItemDataRole.DisplayRole)
         align = index.data(Qt.ItemDataRole.TextAlignmentRole)
@@ -124,15 +109,23 @@ class ItemDelegate(QItemDelegate):
             painter.drawText(rect, align, recommenders)
         painter.restore()
 
-    @staticmethod
-    def get_height(image, title, recommenders):
-        tfont = QFont()
-        tfont.setBold(True)
-        font = QFont()
-        return ((210 if image else 0) +
-                height(title, tfont) + 4 +
-                (height(recommenders, font) if recommenders else 0)
-                + 20)
+    def sizeHint(self, option, index):
+        h = 0
+        image = index.data(Qt.ItemDataRole.DecorationRole)
+        if image is not None:
+            h += image.height() + 10
+
+        text = index.data(Qt.ItemDataRole.DisplayRole)
+        if text is not None:
+            title, recommenders = text.split("\x00")
+            tfont = QFont()
+            tfont.setBold(True)
+            font = QFont()
+            h += (height(title, tfont) + 4 +
+                  (height(recommenders, font) if recommenders else 0)
+                 )
+
+        return QSize(100, h + 20)
 
 
 class CartoonTableModel(QAbstractTableModel):
@@ -141,37 +134,48 @@ class CartoonTableModel(QAbstractTableModel):
         self.names: Optional[np.ndarray] = None  # strings
         self.row_order: Optional[np.ndarray] = None # indices
         self.items: Optional[np.ndarray] = None  # strings
-        self.images: Optional[list[QPixmap]] = None
+        self.urls: Optional[list[str]] = None
 
         self.friends: Optional[list[list[tuple[int, float]]]] = None
         self.chosen_items: Optional[list[list[int]]] = None
         self.recommendations: Optional[list[list[int]]] = None
         self.recommenders: Optional[list[list[list[int]]]] = None
 
+        self.pending: Optional[dict[Future[QImage], int]] = None
+        self.image_cache: dict[str, CartoonTableModel._Item] = {}
+
     def set_data(self,
-                 names, items, images,
+                 names, items, urls,
                  friends, chosen_items, recommendations, recommenders):
+        # Keep the cache; new data likely uses the same images, and the
+        # cache is small enough to not be a problem.
         self.beginResetModel()
         self.names = names
         self.row_order = np.argsort(names)
         self.items = items
-        self.images = images
+        self.urls = urls
         self.friends = friends
         self.chosen_items = chosen_items
         self.recommendations = recommendations
         self.recommenders = recommenders
+        if self.urls is not None:
+            self.start_download()
         self.endResetModel()
 
     def reset(self):
+        # TODO: stop pending downloads?
+        # Keep the cache; new data likely uses the same images, and the
+        # cache is small enough to not be a problem.
         self.beginResetModel()
         self.names = None
         self.row_order = None
         self.items = None
-        self.images = None
+        self.urls = None
         self.friends = None
         self.chosen_items = None
         self.recommendations = None
         self.recommenders = None
+        self.pending: dict[Future[QImage], int] = None
         self.endResetModel()
 
     def rowCount(self, parent=QModelIndex()):
@@ -196,16 +200,13 @@ class CartoonTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
                     | Qt.TextWordWrap)
-        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.SizeHintRole):
-            return None
 
-        name = self.names[row]
-        friends = "Similar: " + ", ".join(self.names[self.friends[row][0]])
-        choices = ", ".join(self.items[self.chosen_items[row]])
         if role == Qt.ItemDataRole.DisplayRole:
+            name = self.names[row]
+            friends = "Similar: " + ", ".join(self.names[self.friends[row][0]])
+            choices = ", ".join(self.items[self.chosen_items[row]])
             return "\x00".join((name, friends, choices))
-        if role == Qt.ItemDataRole.SizeHintRole:
-            return QSize(150, PersonDelegate.get_height(name, friends, choices))
+        return None
 
     def data_for_recommendation(self, row, column, role):
         if column >= len(self.recommendations[row]):
@@ -214,20 +215,76 @@ class CartoonTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return (Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
                     | Qt.TextWordWrap)
-        if role == Qt.ItemDataRole.DecorationRole:
-            return self.images[self.recommendations[row][column]]
-        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.SizeHintRole):
-            return None
 
-        title = self.items[self.recommendations[row][column]]
-        recommenders = ', '.join(self.names[self.recommenders[row][column]])
-        if recommenders:
-            recommenders = f"({recommenders})"
+        if role == Qt.ItemDataRole.DecorationRole and self.urls is not None:
+            url = self.urls[self.recommendations[row][column]]
+            item = self.image_cache.get(url)
+            if item is None or item.image is None:
+                if item is None:
+                    icon = StampIconEngine("\N{Hourglass}", Qt.gray)
+                else:
+                    icon = StampIconEngine("\N{Empty Set}", Qt.red)
+                return icon.pixmap(QSize(100, 100), QIcon.Normal, QIcon.On)
+            return item.image
+
         if role == Qt.ItemDataRole.DisplayRole:
+            title = self.items[self.recommendations[row][column]]
+            recommenders = ', '.join(self.names[self.recommenders[row][column]])
+            if recommenders:
+                recommenders = f"({recommenders})"
             return f"{title}\x00{recommenders}"
-        if role == Qt.ItemDataRole.SizeHintRole:
-            image = self.images and self.images[self.recommendations[row][column]]
-            return QSize(150, ItemDelegate.get_height(image, title, recommenders))
+
+        return None
+
+    @dataclass
+    class _Item:
+        image: Optional[QPixmap]
+        error_text: Optional[str]
+
+    def start_download(self) -> bool:
+        assert self.urls is not None
+        # qnam has no parent and may die before completing the request
+        # One solution is to create an instance here and give it a parent,
+        # the other is to add a reference to the future (see below)
+        # qnam = QNetworkAccessManager(self)
+        qnam = ImageLoader.networkAccessManagerInstance()
+        used_images = set().union(*map(set, self.recommendations))
+        self.pending = {}
+        for img_index, url in enumerate(self.urls):
+            if img_index not in used_images:
+                continue
+            future, deferred = image_loader(QUrl(url), qnam)
+            f = deferred()
+            self.pending[f] = img_index
+            w = FutureWatcher(f, )
+            w.done.connect(self.__on_future_done)
+            f._p_watcher = w  # type: ignore
+            f._qnam = qnam  # keep a weak reference as long as necessary
+
+    @Slot(object)
+    def __on_future_done(self, f: 'Future[QImage]'):
+        assert self.urls is not None
+        assert self.pending is not None
+
+        try:
+            img = f.result()
+        except CancelledError:
+            return
+        except BaseException as err:
+            item = CartoonTableModel._Item(None, str(err))
+        else:
+            img = img.scaled(150, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = QPixmap.fromImage(img)
+            item = CartoonTableModel._Item(pixmap, None)
+        img_index = self.pending.pop(f)
+        self.image_cache[self.urls[img_index]] = item
+        for rowi, row in enumerate(self.recommendations):
+            for coli, rec_index in enumerate(row, start=1):
+                if rec_index == img_index:
+                    index = self.index(rowi, coli)
+                    self.dataChanged.emit(
+                        index, index,
+                        (Qt.ItemDataRole.DecorationRole, Qt.SizeHintRole))
 
 
 class OWRecommendation(OWWidget):
@@ -366,7 +423,6 @@ class OWRecommendation(OWWidget):
             images (list of QPixmap): images
         """
         super().__init__()
-        self.image_store = ImageStore()
 
         self.network: Network = None
         self.data: Table = None
@@ -381,7 +437,7 @@ class OWRecommendation(OWWidget):
         self.item_column = None
 
         self.image_column = None
-        self.images = None
+        self.urls = None
 
         self.column_box = gui.hBox(self.mainArea)
         gui.comboBox(
@@ -436,7 +492,7 @@ class OWRecommendation(OWWidget):
 
         self.choices = None
         self.image_column = None
-        self.images = None
+        self.urls = None
 
         self.update_page()
 
@@ -610,22 +666,22 @@ class OWRecommendation(OWWidget):
         friends = self.get_friends()
         recommendations, recommenders = self.get_recommendations(5)
         self.rec_model.set_data(
-            self.person_names, self.item_names, self.images,
+            self.person_names, self.item_names, self.urls,
             friends,
             [np.flatnonzero(row) for row in self.choices],
             recommendations, recommenders)
 
     def set_images(self):
         if self.image_column is None:
-            self.images = None
+            self.urls = None
             return
 
         image_origin = self.image_column.attributes.get("origin", ".")
-        self.images = []
-        for img_name in self.data.get_column(self.image_column):
-            if not img_name.startswith("http"):
-                img_name = os.path.join(image_origin, img_name)
-            self.images.append(self.image_store[img_name])
+        self.urls = []
+        for url in self.data.get_column(self.image_column):
+            if not url.startswith("http"):
+                url = "file://" + os.path.join(image_origin, url)
+            self.urls.append(url)
 
     def get_friends(self):
         if not self.is_valid:

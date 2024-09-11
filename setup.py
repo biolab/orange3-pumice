@@ -5,7 +5,8 @@ VERSION = "0.9.1"
 
 INSTALL_REQUIRES = (
     'Orange3>=3.36',
-    'orange3-network'
+    'orange3-network',
+    'orange3-imageanalytics',
 ),
 
 EXTRAS_REQUIRE = {
