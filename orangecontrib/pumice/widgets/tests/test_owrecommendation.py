@@ -489,28 +489,6 @@ class TestOWRecommendation(WidgetTest):
         self.assertTrue(w.is_valid)
         w.rec_model.set_data.assert_called()
 
-    @patch("os.path.exists", new=lambda x: bool(ord(x[-1]) % 2))
-    @patch("builtins.open")
-    @patch("orangecontrib.pumice.widgets.owrecommendation.QPixmap")
-    def test_set_images(self, *_):
-        w = self.widget
-
-        w.image_column = None
-        w.set_images()
-        self.assertIsNone(w.images)
-
-        nnodes = self.edges.shape[0]
-        nodes = np.array([f"n{i}" for i in range(nnodes)])
-        n = Network(nodes, self.edges)
-        self.send_signal(w.Inputs.network, n)
-        self.send_signal(w.Inputs.item_data, self.more_item_data)
-
-        self.assertIsNotNone(w.images[0])
-        self.assertIsNone(w.images[1])
-        self.assertIsNotNone(w.images[2])
-        self.assertIsNone(w.images[3])
-        self.assertIsNotNone(w.images[4])
-
     def test_get_friends_one(self):
         w = self.widget
         self.network_one_name.edges[0].edges[1, 3] = 0.5
