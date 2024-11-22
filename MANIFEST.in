@@ -1,3 +1,4 @@
 recursive-include . *.toml *.ini *.md *.pypi .coveragerc LICENSE
 recursive-include doc *.bat *.json *.md *.png *.py *.rst *.txt Makefile
 recursive-include orangecontrib *.svg
+recursive-include i18n *.jaml *.yaml
