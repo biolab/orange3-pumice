@@ -1,0 +1,1 @@
+ICON = "icons/category.svg"

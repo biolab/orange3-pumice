@@ -1,0 +1,70 @@
+networks/dataSimulation.py:
+    inputData.csv: false
+    ;: false
+    %d: false
+widgets/owrecommendation.py:
+    class `PersonDelegate`:
+        def `paint`:
+            \x00: false
+        def `sizeHint`:
+            \x00: false
+    class `ItemDelegate`:
+        def `paint`:
+            \x00: false
+        def `sizeHint`:
+            \x00: false
+    class `CartoonTableModel`:
+        def `data_for_person`:
+            'Similar: ': 'Podobni: '
+            ', ': true
+            \x00: false
+        def `data_for_recommendation`:
+            \N{Hourglass}: false
+            \N{Empty Set}: false
+            ', ': false
+            ({recommenders}): false
+            {title}\x00{recommenders}: false
+        def `__on_future_done`:
+            Future[QImage]: false
+    class `OWRecommendation`:
+        Recommendation: Priporočila
+        Demo for simple network-based recommendation algorithm: Demo za preprost algoritem priporočil na podlagi omrežja podobnih uporabnikov
+        icons/recommendation.svg: false
+        class `Inputs`:
+            Network: Mreža
+            Items: Stvari
+        class `Error`:
+            Network does not contain user choices. Provide separate data.: Mreža ne vsebuje uporabniških izbir. Posredujte ločene podatke.
+            Network does not contain item names.: Mreža ne vsebuje imen stvari.
+            Data included in the network does not contain user names.: Podatki vključeni v mrežo ne vsebujejo uporabniških imen.
+            Some network nodes are missing from data columns: Nekatera vozlišča mreže manjkajo v stolpcih podatkov
+            Network nodes contain multiple string attributes.\n: Vozlišča mreže vsebujejo več besedilnih spremenljivk.\n
+            When network and data are both present, the network must have\n: Ko sta mreža in podatki prisotni, mora mreža imeti\n
+            a single string attribute whose values match the names of persons.: en sam besedilni atribut, katerega vrednosti se ujemajo z imeni oseb.
+            Network data must be a table or a 1-d array: Podatki mreže morajo biti tabela ali 1-d polje
+        def `__init__`:
+            person_column: false
+            'Person name column (in network data): ': 'Stolpec z imeni oseb (v podatkih mreže): '
+            item_column: false
+            'Item column: ': 'Stolpec z imeni stvari: '
+        def `_init_item_column_from_data`:
+            type: false
+            image: false
+            .png: false
+            .jpg: false
+            .jpeg: false
+            .gif: false
+        def `set_images`:
+            origin: false
+            .: false
+            http: false
+            file://: false
+    def `main`:
+        ..: false
+        datasets: false
+        cartoons: false
+        cartoons.xlsx: false
+        poster: false
+        origin: false
+        cartoons.net: false
+    __main__: false
