@@ -13,6 +13,7 @@ from Orange.widgets.widget import OWWidget
 from orangewidget.settings import Setting
 from orangewidget.utils.signals import Input, Output
 from orangewidget.utils.widgetpreview import WidgetPreview
+from orangewidget.widget import Msg
 
 Months = ["January", "February", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
@@ -38,6 +39,13 @@ class OWClimateData(OWWidget):
     description = "Climate data"
     icon = "icons/ClimateData.svg"
     priority = 10
+
+    class Error(OWWidget.Error):
+        select_single = Msg("Select a single station")
+        invalid_in_selection = Msg("Input data does not have a column 'Station'")
+
+    class Warning(OWWidget.Warning):
+        missing_stations = Msg("Some selected stations are missing in the data set")
 
     class Inputs:
         stations = Input("Weather Stations", Table)
@@ -74,7 +82,7 @@ class OWClimateData(OWWidget):
 
     def __init__(self):
         super().__init__()
-        self.stations = None
+        self.selected_stations = None
 
         tf = gui.radioButtonsInBox(
             self.controlArea, self, "time_selection", box="Time Frame",
@@ -163,9 +171,8 @@ class OWClimateData(OWWidget):
 
     @Inputs.stations
     def set_stations(self, data):
-        self.stations = data
+        self.selected_stations = data
         self.station_selector.setDisabled(data is not None)
-        self.geo_selection_changed()
         self.update_data()
 
     def continent_changed(self):
@@ -202,11 +209,18 @@ class OWClimateData(OWWidget):
         self.update_data()
 
     def update_data(self):
+        self.Error.select_single.clear()
+        self.Error.invalid_in_selection.clear()
+        self.Warning.missing_stations.clear()
+
         if not (self.get_precipitation or self.get_temperature):
             self.Outputs.data.send(None)
             return
 
         tdata, pdata, attrs, meta, meta_attrs = self.Getters[self.time_selection](self)
+        if tdata is None and pdata is None:
+            self.Outputs.data.send(None)
+            return
         data = tdata if not self.get_precipitation \
             else pdata if not self.get_temperature \
             else np.hstack((tdata, pdata))
@@ -289,6 +303,41 @@ class OWClimateData(OWWidget):
             meta = StationData.get_column("Station")[indices][:, None]
         return indices, meta, meta_attrs
 
+    def _selection_indices(self):
+        n = len(self.selected_stations)
+        nothing = (None, ) * 3
+        if n == 0:
+            return nothing
+        if n > 1 and self.time_selection == self.MonthlyByDecades:
+            self.Error.select_single()
+            return nothing
+        if "Station" not in self.selected_stations.domain:
+            self.Error.invalid_in_selection()
+            return nothing
+
+        indices = np.isin(StationData.get_column("Station"),
+                          self.selected_stations.get_column("Station"))
+        sel = np.sum(indices)
+        if sel == 0:
+            return nothing
+        if sel != n:
+            self.Warning.missing_stations()
+
+        if n == 1:
+            meta_attrs = []
+            meta = None
+        else:
+            if self.time_selection == self.MonthlyByDecades:
+                self.Error.select_single()
+                return nothing
+            meta_attrs = [StationData.domain["Station"],
+                          StationData.domain["Country"]]
+            meta = np.vstack((
+                StationData.get_column("Country"),
+                StationData.get_column("Station"))).T
+        return indices, meta, meta_attrs
+
+
     def _month_attrs(self):
         """
         Return names of attributes for monthly data.
@@ -297,27 +346,37 @@ class OWClimateData(OWWidget):
             + (MonthPrecAttrs if self.get_precipitation else [])
 
     def _get_data(self, infix):
-        if self.geo_selection in (self.Countries, self.CountriesOnContinent):
+        if self.selected_stations is not None:
+            indices, meta, meta_attrs = self._selection_indices()
+            prefix = "S"
+        elif self.geo_selection in (self.Countries, self.CountriesOnContinent):
             indices, meta, meta_attrs = self._country_indices()
             prefix = "C"
         else:
             indices, meta, meta_attrs = self._station_indices()
             prefix = "S"
+        assert indices is not None, \
+            "Is this monthly mean going through _selection_indices via _get_data?"
         tdata = (self.get_temperature and
                  self._load_tdata(f"{prefix}-{infix}-")[indices])
         pdata = (self.get_precipitation and
                  pickle.load(dopen(f"{prefix}-{infix}-prcp.pkl", "rb"))[indices])
         return tdata, pdata, meta, meta_attrs
 
-
     def _total_monthly(self):
         tdata, pdata, meta, meta_attrs = self._get_data("MT")
         return tdata, pdata, self._month_attrs(), meta, meta_attrs
 
     def _decades_monthly(self):
-        assert self.geo_selection == self.SingleStation
-        stationIdx = np.flatnonzero(
-            StationData.get_column("Station") == self.station)[0]
+        if self.selected_stations is None:
+            assert self.geo_selection == self.SingleStation
+            stationIdx = np.flatnonzero(
+                StationData.get_column("Station") == self.station)[0]
+        else:
+            indices, *_ = self._selection_indices()
+            if indices is None:
+                return None, None, [], None, []
+            stationIdx = np.flatnonzero(indices)[0]
         if self.get_temperature:
             tdata = self._load_tdata("S-MD-")[stationIdx].T
         else:
@@ -370,3 +429,5 @@ class OWClimateData(OWWidget):
 
 if __name__ == "__main__":
     WidgetPreview(OWClimateData).run()
+    # WidgetPreview(OWClimateData).run(set_stations=StationData[:1])
+    # WidgetPreview(OWClimateData).run(set_stations=StationData[:10])
