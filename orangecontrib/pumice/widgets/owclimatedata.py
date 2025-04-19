@@ -32,7 +32,14 @@ cont_values = StationData.domain["Continent"].values
 Continents = sorted(set(cont_values) - {"", "?"})
 Stations = sorted(set(StationData.get_column("Station")) - {""})
 
+_daily_mask = pickle.load(dopen("S-Y-mask.pkl", "rb"))
+DailyStations = sorted(set(StationData.get_column("Station")[_daily_mask]) - {""})
+
 CountriesContinents = pickle.load(dopen("countries.pkl", "rb"))
+
+DefaultContinent = "Europe"
+DefaultCountry = "Slovenia"
+DefaultStation = "LJUBLJANA BEZIGRAD, SI"
 
 class OWClimateData(OWWidget):
     name = "Climate Data"
@@ -66,9 +73,9 @@ class OWClimateData(OWWidget):
     Avg, Min, Max, Span = range(4)
 
     geo_selection = Setting(Countries)
-    continent = Setting("Europe")
-    country = Setting("Slovenia")
-    station = Setting("LJUBLJANA BEZIGRAD, SI")
+    continent = Setting(DefaultContinent)
+    country = Setting(DefaultCountry)
+    station = Setting(DefaultStation)
 
     time_selection = Setting(TotalMonthly)
     month_index = Setting(0)
@@ -200,6 +207,19 @@ class OWClimateData(OWWidget):
             button.setDisabled(i not in allowed)
         if self.geo_selection not in allowed:
             self.geo_selection = allowed[0]
+
+        stations = DailyStations if self.time_selection == self.DailyValues \
+            else Stations
+        stat_combo = self.controls.station
+        if stat_combo.count() != len(stations):
+            prev_station = self.station
+            stat_combo.clear()
+            stat_combo.addItems(stations)
+            if prev_station in stations:
+                self.station = prev_station
+            else:
+                assert DefaultStation in stations
+                self.station = DefaultStation
 
     def time_selection_changed(self):
         self._update_time_selection()
