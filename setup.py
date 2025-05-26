@@ -2,7 +2,7 @@ import os
 from setuptools import setup, find_packages
 from setuptools.command.install import install
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 INSTALL_REQUIRES = (
     'Orange3>=3.38.1',
