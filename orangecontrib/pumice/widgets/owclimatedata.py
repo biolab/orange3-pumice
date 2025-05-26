@@ -52,7 +52,7 @@ DefaultStation = "LJUBLJANA BEZIGRAD, SI"
 class OWClimateData(OWWidget):
     name = "Climate Data"
     description = "Climate data"
-    icon = "icons/ClimateData.svg"
+    icon = "icons/climatedata.svg"
     priority = 10
 
     class Error(OWWidget.Error):
