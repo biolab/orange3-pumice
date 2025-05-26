@@ -5,8 +5,8 @@ from setuptools.command.install import install
 VERSION = "1.1"
 
 INSTALL_REQUIRES = (
-    'Orange3>=3.37',
-    'orange3-network',
+    'Orange3>=3.38.1',
+    'orange3-network>=1.10.1',
     'orange3-imageanalytics',
     "orange-canvas-core >=0.2.2",
     "orange-widget-base >=4.23.0",
