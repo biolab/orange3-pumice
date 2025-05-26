@@ -32,8 +32,16 @@ cont_values = StationData.domain["Continent"].values
 Continents = sorted(set(cont_values) - {"", "?"})
 Stations = sorted(set(StationData.get_column("Station")) - {""})
 
-_daily_mask = pickle.load(dopen("S-Y-mask.pkl", "rb"))
-DailyStations = sorted(set(StationData.get_column("Station")[_daily_mask]) - {""})
+
+try:
+    _daily_mask = pickle.load(dopen("S-Y-mask.pkl", "rb"))
+    DailyStations = sorted(set(StationData.get_column("Station")[_daily_mask]) - {""})
+except:
+    # If the file is not available, we assume that daily values are not included
+    INCLUDE_DAILY_VALUES = False
+    DailyStations = []
+else:
+    INCLUDE_DAILY_VALUES = True
 
 CountriesContinents = pickle.load(dopen("countries.pkl", "rb"))
 
@@ -110,8 +118,9 @@ class OWClimateData(OWWidget):
             callback=self.month_changed,
             sizePolicy=(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
         )
-        gui.appendRadioButton(
-            tf, "Daily values", insertInto=gui.hBox(tf))
+        if INCLUDE_DAILY_VALUES:
+            gui.appendRadioButton(
+                tf, "Daily values", insertInto=gui.hBox(tf))
 
         self.station_selector = ss = gui.radioButtonsInBox(
             self.controlArea, self, "geo_selection", box="Weather Stations",
