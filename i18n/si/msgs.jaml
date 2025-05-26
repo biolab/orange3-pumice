@@ -2,6 +2,81 @@ networks/dataSimulation.py:
     inputData.csv: false
     ;: false
     %d: false
+widgets/__init__.py:
+    icons/category.svg: false
+widgets/owcompair.py:
+    ..: false
+    datasets: false
+    cars.xlsx: false
+    '
+    QPushButton {
+        background-color: #007aff;
+        color: white;
+        border: 1px solid #a1a1a1;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 24px;
+        font-weight: bold;
+        margin-top: 8px;
+    }
+    QPushButton:pressed {
+        background-color: #d0d0d0;
+    }
+    
+    QPushButton:disabled{
+        background-color: #d0d0d0;
+        color: #a1a1a1;
+    }
+    
+': false
+    class `OWComPair`:
+        Com Pair: Primerjaj pare
+        Learns a model that compares pairs of items: Sestavi model, ki primerja pare slik
+        icons/compair.svg: false
+        class `Inputs`:
+            Items: Stvari
+            Model: Model
+        class `Outputs`:
+            Model: Model
+        class `Error`:
+            If data has a target variable, it must be numeric.: Če imajo podatki ciljno spremenljivko, mora biti numerična.
+            Data must contain numeric variables without missing values.: Podatki vsebujejo neznane vrednosti.
+            Not enough training data (at least 5 instances).: Premalo podatkov za učenje (potrebnih je vsaj 5 primerov).
+            Some instances have the same value of the target variable.: Nekateri primeri imajo enako vrednost ciljne spremenljivke.
+            Data must contain a string column with image URLs.: Podatki morajo vsebovati stolpec z URL-ji slik.
+        No Data: Ni podatkov
+        Make a Prediction: Napovej
+        Show Next pair: Pokaži naslednji par
+        No More Pairs: Ni več parov
+        Make a Guess: Ugibaj
+        def `__init__`:
+            :: false
+            Start Again: Začni znova
+            Next Five: Naslednjih pet
+            Classify All: Razvrsti vse
+            exclude_seen: false
+            Exclude from model pairs with either car in this pair: Izključi iz modela pare s kakim od vozil v tem paru
+            Learning Curve & Current Score: krivulja učenja in trenutni rezultat
+        def `_find_image_column`:
+            type: false
+            image: false
+            .png: false
+            .jpg: false
+            .jpeg: false
+            .gif: false
+        def `_show_pair`:
+            <b>?????</b>: false
+        def `_show_prediction`:
+            later: kasneje
+            earlier: prej
+            wrong: napačno
+            correct: pravilno
+            y: false
+            0: false
+            1: false
+            'Prediction: <b>{old_young[int(pred)]}</b>': Napoved: <b>{old_young[int(pred)]}</b>
+            <b>{old_young[1 - int(pred)]}</b> ({wrong_correct[int(correct)]}!): false
+    __main__: false
 widgets/owrecommendation.py:
     class `PersonDelegate`:
         def `paint`:
@@ -28,7 +103,7 @@ widgets/owrecommendation.py:
             Future[QImage]: false
     class `OWRecommendation`:
         Recommendation: Priporočila
-        Demo for simple network-based recommendation algorithm: Demo za preprost algoritem priporočil na podlagi omrežja podobnih uporabnikov
+        Demo for simple network-based recommendation algorithm: Demo za preprost priporočilni algoritem na podlagi omrežja podobnih uporabnikov
         icons/recommendation.svg: false
         class `Inputs`:
             Network: Mreža

@@ -2,7 +2,7 @@ import os
 from setuptools import setup, find_packages
 from setuptools.command.install import install
 
-VERSION = "1.0"
+VERSION = "1.1"
 
 INSTALL_REQUIRES = (
     'Orange3>=3.37',
@@ -59,7 +59,9 @@ setup(
     long_description=LONG_DESCRIPTION,
     long_description_content_type='text/markdown',
     packages=find_packages(),
-    package_data={"orangecontrib.pumice.widgets": ["icons/*.svg"]},
+    package_data={
+        "orangecontrib.pumice": ["datasets/*.xlsx"],
+        "orangecontrib.pumice.widgets": ["icons/*.svg"]},
     entry_points=ENTRY_POINTS,
     install_requires=INSTALL_REQUIRES,
     setup_requires=SETUP_REQUIRES,
