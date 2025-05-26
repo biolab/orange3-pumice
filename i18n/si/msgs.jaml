@@ -4,6 +4,116 @@ networks/dataSimulation.py:
     %d: false
 widgets/__init__.py:
     icons/category.svg: false
+widgets/owclimatedata.py:
+    January: Januar
+    February: Februar
+    March: Marec
+    April: April
+    May: Maj
+    June: Junij
+    July: Julij
+    August: Avgust
+    September: September
+    October: Oktober
+    November: November
+    December: December
+    T-{month[:3]}: true
+    P-{month[:3]}: true
+    ../datasets/weather: false
+    def `dopen`:
+        r: false
+        .gz: false
+    station-data.pkl.gz: false
+    Country: false
+    Continent: false
+    ?: false
+    Station: false
+    S-Y-mask.pkl: false
+    rb: false
+    countries.pkl: false
+    Europe: false
+    Slovenia: false
+    LJUBLJANA BEZIGRAD, SI: false
+    class `OWClimateData`:
+        Climate Data: Podnebni podatki
+        Climate data: Podnebni podatki
+        icons/climatedata.svg: false
+        class `Error`:
+            Select a single station: Izberite eno samo postajo
+            Input data does not have a column 'Station': Vhodni podatki nimajo stolpca 'Postaja'
+        class `Warning`:
+            Some selected stations are missing in the data set: Nekatere izbrane postaje manjkajo v naboru podatkov
+        class `Inputs`:
+            Weather Stations: Vremenske postaje
+        class `Outputs`:
+            Climate Data: Podnebni podatki
+        def `__init__`:
+            time_selection: false
+            Time Frame: Časovno obdobje
+            All-time monthly means: Mesečna povprečja
+            Monthly means by decades: Mesečna povprečja po desetletjih
+            Means for chosen month by decades: Povprečja izbranega meseca po desetletjih
+            month_index: false
+            Daily values: Dnevne vrednosti
+            geo_selection: false
+            Weather Stations: Vremenske postaje
+            All stations (averages by country): Vse postaje (povprečja po državah)
+            Countries on continent:: Države na celini:
+            continent: false
+            'Country: ': 'Država: '
+            country: false
+            'Single station: ': 'Postaja: '
+            station: false
+            Values: Vrednosti
+            get_temperature: false
+            'Temperature: ': 'Temperatura: '
+            temperature_value: false
+            Average: Povprečje
+            Minimum: Minimum
+            Maximum: Maksimum
+            Span: Obseg
+            get_precipitation: false
+            Precipitation: Padavine
+        def `_load_tdata`:
+            tavg.pkl: false
+            rb: false
+            tmin.pkl: false
+            tmax.pkl: false
+        def `_country_indices`:
+            Country: false
+            Continent: false
+        def `_station_indices`:
+            Station: false
+            Country: false
+        def `_selection_indices`:
+            Station: false
+            Country: false
+        def `_get_data`:
+            S: false
+            C: false
+            Is this monthly mean going through _selection_indices via _get_data?: false
+            {prefix}-{infix}-: false
+            {prefix}-{infix}-prcp.pkl: false
+            rb: false
+        def `_total_monthly`:
+            MT: false
+        def `_decades_monthly`:
+            Station: false
+            S-MD-: false
+            S-MD-prcp.pkl: false
+            rb: false
+            {decade}-{decade % 100 + 9:02}: false
+            Decade: Desetletje
+        def `_month_by_decades`:
+            MD: false
+            T-{decade}-{decade % 100 + 9:02}: false
+            P-{decade}-{decade % 100 + 9:02}: false
+        def `_daily_values`:
+            Y: false
+            {month[:3]} {day + 1}: true
+            T-{d}: true
+            P-{d}: true
+    __main__: false
 widgets/owcompair.py:
     ..: false
     datasets: false

@@ -60,7 +60,7 @@ setup(
     long_description_content_type='text/markdown',
     packages=find_packages(),
     package_data={
-        "orangecontrib.pumice": ["datasets/*.xlsx"],
+        "orangecontrib.pumice": ["datasets/*.xlsx", "datasets/weather/*.pkl.gz"],
         "orangecontrib.pumice.widgets": ["icons/*.svg"]},
     entry_points=ENTRY_POINTS,
     install_requires=INSTALL_REQUIRES,
