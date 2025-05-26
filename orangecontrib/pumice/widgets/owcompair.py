@@ -20,7 +20,7 @@ from orangewidget.widget import Msg
 from Orange.data import Table, StringVariable, Domain, DiscreteVariable
 from Orange.widgets import gui
 from Orange.widgets.widget import OWWidget, Input
-from Orange.classification import (
+from Orange.classification.logistic_regression import (
     LogisticRegressionLearner, LogisticRegressionClassifier)
 
 
