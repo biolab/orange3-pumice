@@ -177,8 +177,8 @@ widgets/owcompair.py:
         def `_show_pair`:
             <b>?????</b>: false
         def `_show_prediction`:
-            later: kasneje
-            earlier: prej
+            newer: novejši
+            older: starejši
             wrong: napačno
             correct: pravilno
             y: false

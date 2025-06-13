@@ -367,9 +367,6 @@ class OWComPair(OWWidget):
             random.shuffle(pairs)
 
         pairs = np.array(pairs)
-        # Ensure that the first two data instances have classes 0 and 1
-        pairs[0] = np.sort(pairs[0])
-        pairs[1] = np.sort(pairs[1])[::-1]
         return pairs
 
     def restart(self):
@@ -422,7 +419,7 @@ class OWComPair(OWWidget):
         self.image2.setPixmap(get_image(url2))
 
     def _show_prediction(self):
-        old_young = ["later", "earlier"]
+        old_young = ["newer", "older"]
         wrong_correct = ["wrong", "correct"]
 
         iter = len(self.scores)
@@ -446,6 +443,10 @@ class OWComPair(OWWidget):
                             & (seen[0] != i2) & (seen[1] != i2)]
                 x = self.data.X[seen[0]] - self.data.X[seen[1]]
                 ys = (seen[0] < seen[1]).astype(float)
+                if len(set(ys)) == 1:
+                    # If all instances are from the same class, flip the first pair
+                    x[0] = -x[0]
+                    ys[0] = 1 - ys[0]
                 data = Table.from_numpy(domain, x, ys)
                 model = LogisticRegressionLearner()(data)
 
