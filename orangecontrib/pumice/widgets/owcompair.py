@@ -10,7 +10,7 @@ import numpy as np
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QPixmap, QFont, QPainter, QColor
 from AnyQt.QtWidgets import (
-    qApp, QHBoxLayout, QWidget, QGridLayout, QSizePolicy, QLabel, QPushButton)
+    QApplication, QHBoxLayout, QWidget, QGridLayout, QSizePolicy, QLabel, QPushButton)
 
 from orangewidget.settings import Setting
 from orangewidget.utils.signals import Output
@@ -385,13 +385,13 @@ class OWComPair(OWWidget):
         with self.disabled_buttons():
             for _ in range(10):
                 self.advance_state()
-                qApp.processEvents()
+                QApplication.instance().processEvents()
 
     def finish(self):
         with self.disabled_buttons():
             while self.state != self.NoMore:
                 self.advance_state()
-                qApp.processEvents()
+                QApplication.instance().processEvents()
 
     def advance_state(self):
         if self.state == self.ShowingPair:
