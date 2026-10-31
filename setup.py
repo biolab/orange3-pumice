@@ -10,6 +10,7 @@ INSTALL_REQUIRES = (
     'orange3-imageanalytics',
     "orange-canvas-core >=0.2.2",
     "orange-widget-base >=4.23.0",
+    "levenshtein"
 ),
 
 EXTRAS_REQUIRE = {
