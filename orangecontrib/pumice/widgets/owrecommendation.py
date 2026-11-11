@@ -716,8 +716,9 @@ class OWRecommendation(OWWidget):
         counts = np.sum(neighbours_choices, axis=0)
         counts[self.choices[row] == 1] = -1
         # Add a bit of noise to break ties randomly
+        rgen = np.random.default_rng(seed=0)
         sorted_items = np.argsort(
-            np.random.uniform(0, 0.00001, len(counts)) - counts)
+            rgen.uniform(0, 0.00001, len(counts)) - counts)
         if n > len(sorted_items):
             n = len(sorted_items)
         if sorted_items[n - 1] == -1:
