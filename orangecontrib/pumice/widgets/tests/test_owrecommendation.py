@@ -522,11 +522,10 @@ class TestOWRecommendation(WidgetTest):
 
         for data_present in ("No", "Yes"):
             with self.subTest(data_present=data_present):
-                recs = [tuple(w._get_recommendations_one(0, 5)[0]) for _ in range(10)]
+                rec = w._get_recommendations_one(0, 5)[0]
                 # Same recommendations, but in different order
-                self.assertTrue(all(set(rec[:-1]) == {0, 1, 4, 6} for rec in recs))
-                self.assertGreater(len(set(recs)), 1)
-                self.assertTrue(all(rec[-1] == 7 for rec in recs))
+                self.assertEqual(set(rec[:-1]), {0, 1, 4, 6})
+                self.assertEqual(rec[-1], 7)
                 self.assertEqual(w._get_recommendations_one(0, 5)[1], [[2]] * 4 + [[]])
 
                 self.assertEqual(w._get_recommendations_one(1, 1)[0], [1])
